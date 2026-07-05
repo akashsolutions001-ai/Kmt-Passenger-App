@@ -1,11 +1,15 @@
 type LatLng = [number, number];
+type RouteProfile = 'driving' | 'walking';
 
 /** Fetch a road-following route through waypoints using OSRM (OpenStreetMap). */
-export async function fetchRoadRoute(waypoints: LatLng[]): Promise<LatLng[] | null> {
+export async function fetchRoadRoute(
+  waypoints: LatLng[],
+  profile: RouteProfile = 'driving'
+): Promise<LatLng[] | null> {
   if (waypoints.length < 2) return null;
 
   const coordStr = waypoints.map(([lat, lng]) => `${lng},${lat}`).join(';');
-  const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+  const url = `https://router.project-osrm.org/route/v1/${profile}/${coordStr}?overview=full&geometries=geojson`;
 
   try {
     const response = await fetch(url);

@@ -164,12 +164,74 @@ export function findNearestDepot(
 
 export interface BoardingArrivalEstimate {
   depotName: string;
+  depotLatitude?: number;
+  depotLongitude?: number;
   depotDistanceKm: number;
   routeDistanceKm: number;
   etaMinutes: number;
   etaLabel: string;
   source: 'live' | 'route';
   boardingStopName: string;
+}
+
+export interface DepotLocation {
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+export const DEPOT_ARRIVAL_RADIUS_M = 50;
+
+export function resolveDepotForBoarding(
+  route: Route,
+  boardingStopId: string,
+  depots: Depot[]
+): DepotLocation | null {
+  const boardingIndex = route.stops.findIndex((s) => s.id === boardingStopId);
+  if (boardingIndex < 0) return null;
+
+  const boardingStop = route.stops[boardingIndex];
+  const firstStop = route.stops[0];
+
+  if (hasCoordinates(boardingStop)) {
+    const nearestDepot = findNearestDepot(
+      depots,
+      boardingStop.latitude!,
+      boardingStop.longitude!,
+      route.id
+    );
+    if (nearestDepot) {
+      return {
+        name: nearestDepot.name,
+        latitude: nearestDepot.latitude,
+        longitude: nearestDepot.longitude,
+      };
+    }
+    if (hasCoordinates(firstStop)) {
+      return {
+        name: firstStop.name,
+        latitude: firstStop.latitude!,
+        longitude: firstStop.longitude!,
+      };
+    }
+  } else if (hasCoordinates(firstStop)) {
+    return {
+      name: firstStop.name,
+      latitude: firstStop.latitude!,
+      longitude: firstStop.longitude!,
+    };
+  }
+
+  return null;
+}
+
+export function distanceMeters(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  return haversineKm(lat1, lon1, lat2, lon2) * 1000;
 }
 
 export function estimateBoardingArrival(
@@ -255,6 +317,8 @@ export function estimateBoardingArrival(
 
   return {
     depotName,
+    depotLatitude: depotLat,
+    depotLongitude: depotLng,
     depotDistanceKm,
     routeDistanceKm,
     etaMinutes,
