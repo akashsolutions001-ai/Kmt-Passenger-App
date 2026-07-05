@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Bell, X, Bus, MapPin, Info, AlertTriangle, Navigation } from 'lucide-react';
-import { useStudent } from '@/context/StudentContext';
+import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { AppNotification } from '@/types/student';
 
 export const NotificationBell: React.FC = () => {
-  const { notifications, unreadCount, markNotificationRead, clearNotifications } = useStudent();
+  const { notifications, unreadCount, markNotificationRead, clearNotifications } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
   const getNotificationIcon = (type: AppNotification['type']) => {

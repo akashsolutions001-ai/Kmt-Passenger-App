@@ -3,7 +3,8 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvent }
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LiveBusMapProps, BusPosition, StopMarker } from './types';
-import { MapPin, Loader2, Crosshair, Route } from 'lucide-react';
+import { fetchRoadRoute, waypointsKey } from '@/utils/routeGeometry';
+import { MapPin, Loader2, Crosshair, Route, ExternalLink } from 'lucide-react';
 
 // Default center (India - adjust as needed)
 const DEFAULT_CENTER: [number, number] = [20.5937, 78.9629];
@@ -31,47 +32,45 @@ const createBusIcon = (isMoving: boolean) => {
     });
 };
 
-// Create stop icons based on status
-const createStopIcon = (status: StopMarker['status'], isStudentStop: boolean) => {
-    let bgColor = '#9ca3af';
-    let borderColor = '#6b7280';
+// Bus stop sign icon with order number
+const createBusStopIcon = (status: StopMarker['status'], order: number, isStudentStop: boolean) => {
+    let fill = '#ffffff';
+    let stroke = '#64748b';
+    let badge = '#94a3b8';
 
     if (status === 'reached') {
-        bgColor = '#22c55e';
-        borderColor = '#16a34a';
+        stroke = '#16a34a';
+        badge = '#22c55e';
     } else if (status === 'current') {
-        bgColor = '#3b82f6';
-        borderColor = '#2563eb';
+        stroke = '#2563eb';
+        badge = '#3b82f6';
     }
 
-    const size = isStudentStop ? 32 : 24;
+    const width = isStudentStop ? 36 : 30;
+    const height = isStudentStop ? 48 : 42;
 
     return L.divIcon({
-        className: 'stop-marker',
+        className: 'bus-stop-marker',
         html: `
-      <div class="stop-marker-container" style="position: relative;">
-        <div class="stop-marker-dot" style="
-          width: ${size}px;
-          height: ${size}px;
-          background-color: ${bgColor};
-          border: 3px solid ${borderColor};
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: bold;
-          font-size: ${isStudentStop ? '12px' : '10px'};
-          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        ">
-          ${status === 'reached' ? '✓' : status === 'current' ? '●' : ''}
-        </div>
+      <div class="bus-stop-marker-wrap" style="width:${width}px;height:${height}px;">
+        <svg viewBox="0 0 32 44" width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 1 C9 1 4 6 4 12 C4 22 16 42 16 42 C16 42 28 22 28 12 C28 6 23 1 16 1 Z"
+            fill="${fill}" stroke="${stroke}" stroke-width="2"/>
+          <circle cx="16" cy="13" r="8" fill="${badge}"/>
+          <text x="16" y="16.5" text-anchor="middle" fill="white" font-size="9" font-weight="700">${order}</text>
+        </svg>
+        ${isStudentStop ? '<div class="bus-stop-star">★</div>' : ''}
       </div>
     `,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-        popupAnchor: [0, -size / 2],
+        iconSize: [width, height],
+        iconAnchor: [width / 2, height],
+        popupAnchor: [0, -height + 4],
     });
+};
+
+// Create stop icons based on status (legacy fallback)
+const createStopIcon = (status: StopMarker['status'], isStudentStop: boolean, order = 0) => {
+    return createBusStopIcon(status, order, isStudentStop);
 };
 
 // Component to handle map view updates
@@ -121,6 +120,94 @@ function MapViewController({
     }, [busPosition, map, centerTrigger, autoCenter, hasUserInteracted]);
 
     return null;
+}
+
+// Fit map to show all stops and bus
+function MapBoundsController({
+    stops,
+    busPosition,
+}: {
+    stops: StopMarker[];
+    busPosition: BusPosition | null;
+}) {
+    const map = useMap();
+    const fittedKeyRef = useRef<string>('');
+
+    useEffect(() => {
+        const points: L.LatLngExpression[] = stops.map((s) => [s.latitude, s.longitude]);
+        if (busPosition) {
+            points.push([busPosition.latitude, busPosition.longitude]);
+        }
+        if (points.length === 0) return;
+
+        const key = `${points.length}-${busPosition?.latitude ?? 0}-${busPosition?.longitude ?? 0}-${stops.map((s) => s.id).join(',')}`;
+        if (fittedKeyRef.current === key) return;
+        fittedKeyRef.current = key;
+
+        if (points.length === 1) {
+            map.setView(points[0], DEFAULT_ZOOM, { animate: true });
+            return;
+        }
+
+        map.fitBounds(L.latLngBounds(points), {
+            padding: [48, 48],
+            maxZoom: 16,
+            animate: true,
+        });
+    }, [stops, busPosition, map]);
+
+    return null;
+}
+
+// Road-following route polyline via OSRM
+function RoadRoutePolyline({ waypoints }: { waypoints: Array<[number, number]> }) {
+    const [positions, setPositions] = useState<Array<[number, number]>>([]);
+    const wpKey = waypointsKey(waypoints);
+
+    useEffect(() => {
+        if (waypoints.length < 2) {
+            setPositions([]);
+            return;
+        }
+
+        let cancelled = false;
+
+        fetchRoadRoute(waypoints).then((roadLine) => {
+            if (cancelled) return;
+            setPositions(roadLine ?? waypoints);
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [wpKey, waypoints]);
+
+    if (positions.length < 2) return null;
+
+    return [
+        <Polyline
+            key="route-shadow"
+            positions={positions}
+            pathOptions={{
+                color: '#1e3a8a',
+                weight: 9,
+                opacity: 0.25,
+                lineCap: 'round',
+                lineJoin: 'round',
+            }}
+        />,
+        <Polyline
+            key="route-main"
+            positions={positions}
+            pathOptions={{
+                color: '#2563eb',
+                weight: 5,
+                opacity: 0.92,
+                lineCap: 'round',
+                lineJoin: 'round',
+            }}
+        />,
+    ];
 }
 
 // Component to handle map click (for fullscreen toggle)
@@ -336,9 +423,11 @@ export const LiveBusMap: React.FC<LiveBusMapProps> = ({
     height = 300,
     autoCenter = false,
     showPath: initialShowPath = true,
+    showRouteLine = true,
     maxPathPoints = 50,
 }) => {
     const [showPath, setShowPath] = useState(initialShowPath);
+    const [showRoute, setShowRoute] = useState(showRouteLine);
     const [centerTrigger, setCenterTrigger] = useState(0);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [hasUserInteracted, setHasUserInteracted] = useState(false);
@@ -355,8 +444,18 @@ export const LiveBusMap: React.FC<LiveBusMapProps> = ({
     }, []);
 
     const handleTogglePath = useCallback(() => {
-        setShowPath((prev) => !prev);
+        setShowRoute((prev) => !prev);
     }, []);
+
+    const routeWaypoints = useMemo(
+        () =>
+            [...stops]
+                .sort((a, b) => a.order - b.order)
+                .map((s) => [s.latitude, s.longitude] as [number, number]),
+        [stops]
+    );
+
+    const hasStops = stops.length > 0;
 
     const handleEnterFullscreen = useCallback(() => {
         setIsFullscreen(true);
@@ -382,8 +481,8 @@ export const LiveBusMap: React.FC<LiveBusMapProps> = ({
                     ✕
                 </button>
             )}
-            {/* Loading state when no bus position */}
-            {!busPosition && (
+            {/* Loading state when no bus position and no stops */}
+            {!busPosition && !hasStops && (
                 <div className="map-overlay map-overlay-loading">
                     <div className="map-overlay-content">
                         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -394,8 +493,8 @@ export const LiveBusMap: React.FC<LiveBusMapProps> = ({
                 </div>
             )}
 
-            {/* Route not started overlay */}
-            {busPosition && routeState === 'not_started' && (
+            {/* Route not started overlay — only when no stop markers to show */}
+            {busPosition && routeState === 'not_started' && !hasStops && (
                 <div className="map-overlay map-overlay-not-started">
                     <div className="map-overlay-content">
                         <MapPin className="w-8 h-8 text-muted-foreground" />
@@ -432,6 +531,12 @@ export const LiveBusMap: React.FC<LiveBusMapProps> = ({
                     onUserInteract={() => setHasUserInteracted(true)}
                 />
 
+                <MapBoundsController stops={stops} busPosition={busPosition} />
+
+                {showRoute && routeWaypoints.length >= 2 && (
+                    <RoadRoutePolyline waypoints={routeWaypoints} />
+                )}
+
                 {showPath && busPosition && routeState === 'in_progress' && (
                     <PathTrail
                         currentPosition={busPosition}
@@ -442,7 +547,13 @@ export const LiveBusMap: React.FC<LiveBusMapProps> = ({
 
                 {stops.map((stop) => {
                     const isStudentStop = stop.id === studentStopId || stop.isStudentStop;
-                    const icon = createStopIcon(stop.status, !!isStudentStop);
+                    const icon = createStopIcon(stop.status, !!isStudentStop, stop.order);
+                    const statusLabel =
+                        stop.status === 'reached'
+                            ? 'Reached'
+                            : stop.status === 'current'
+                              ? 'On the Way'
+                              : 'Pending';
 
                     return (
                         <Marker
@@ -452,9 +563,33 @@ export const LiveBusMap: React.FC<LiveBusMapProps> = ({
                         >
                             <Popup>
                                 <div className="stop-popup">
-                                    <strong>{stop.name}</strong>
-                                    {isStudentStop && <span className="stop-popup-badge"> ⭐</span>}
-                                    <div>Stop #{stop.order} - {stop.status}</div>
+                                    <div className="stop-popup-header">
+                                        <strong>{stop.name}</strong>
+                                        {isStudentStop && (
+                                            <span className="stop-popup-badge">Your stop</span>
+                                        )}
+                                    </div>
+                                    <div className="stop-popup-row">
+                                        <span className="stop-popup-label">Stop #</span>
+                                        <span>{stop.order}</span>
+                                    </div>
+                                    <div className="stop-popup-row">
+                                        <span className="stop-popup-label">Status</span>
+                                        <span className={`stop-popup-status ${stop.status}`}>
+                                            {statusLabel}
+                                        </span>
+                                    </div>
+                                    {stop.mapLink && (
+                                        <a
+                                            href={stop.mapLink}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="stop-popup-link"
+                                        >
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                            Open in Maps
+                                        </a>
+                                    )}
                                 </div>
                             </Popup>
                         </Marker>
@@ -484,8 +619,8 @@ export const LiveBusMap: React.FC<LiveBusMapProps> = ({
                 </button>
                 <button
                     onClick={handleTogglePath}
-                    className={`map-control-btn ${showPath ? 'active' : ''}`}
-                    title={showPath ? 'Hide path' : 'Show path'}
+                    className={`map-control-btn ${showRoute ? 'active' : ''}`}
+                    title={showRoute ? 'Hide route line' : 'Show route line'}
                 >
                     <Route className="w-5 h-5" />
                 </button>

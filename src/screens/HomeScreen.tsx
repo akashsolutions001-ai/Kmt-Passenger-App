@@ -1,146 +1,274 @@
-import { useState } from 'react';
-import { useStudent } from '@/context/StudentContext';
+import { useMemo, useState } from 'react';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { RouteCard } from '@/components/RouteCard';
-import { StopSelectCard } from '@/components/StopSelectCard';
-import { Search, Bus, MapPin, Star, Megaphone, MessageSquareWarning, LogIn } from 'lucide-react';
+import { DepotArrivalCard } from '@/components/DepotArrivalCard';
+import { BusResultCard } from '@/components/BusResultCard';
+import { TripSearchCard } from '@/components/TripSearchCard';
+import { AnnouncementsSheet } from '@/components/AnnouncementsSheet';
+import { ComplaintDialog } from '@/components/ComplaintDialog';
+import { FavouritesSheet } from '@/components/FavouritesSheet';
+import { FavouriteTrip } from '@/types/firestore';
+import { isSameRoute, isValidTrip } from '@/utils/tripStops';
+import {
+  AvailableBus,
+  availableBusToFirestoreBus,
+  fetchAvailableBusesForRoute,
+} from '@/utils/busSearch';
+import { Bus, LogOut, Star, Megaphone, MessageSquareWarning } from 'lucide-react';
+import { toast } from 'sonner';
 
-interface HomeScreenProps {
-  onOpenLogin?: () => void;
-}
-
-export const HomeScreen: React.FC<HomeScreenProps> = ({ onOpenLogin }) => {
+export const HomeScreen: React.FC = () => {
   const {
     routes,
+    bookableStops,
     selectedRoute,
     selectRoute,
-    selectStop,
+    selectBus,
+    selectFromStop,
+    selectToStop,
+    fromStopId,
+    toStopId,
     confirmSelection,
     isLoggedIn,
     passenger,
     student,
-  } = useStudent();
+    logout,
+  } = useAuth();
 
   const profile = passenger ?? student;
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchMode, setSearchMode] = useState<'route' | 'stop' | 'bus'>('route');
-  const [selectedStopId, setSelectedStopId] = useState<string | undefined>();
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectingBusId, setSelectingBusId] = useState<string | null>(null);
+  const [availableBuses, setAvailableBuses] = useState<AvailableBus[] | null>(null);
+  const [announcementsOpen, setAnnouncementsOpen] = useState(false);
+  const [complaintOpen, setComplaintOpen] = useState(false);
+  const [favouritesOpen, setFavouritesOpen] = useState(false);
 
-  const filteredRoutes = routes.filter((r) =>
-    r.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const fromStop = bookableStops.find((s) => s.id === fromStopId);
+  const toStop = bookableStops.find((s) => s.id === toStopId);
 
-  const handleStopPick = (stopId: string) => {
-    setSelectedStopId(stopId);
-    selectStop(stopId);
+  const matchedRoutes = useMemo(() => {
+    if (!fromStop || !toStop) return [];
+    const route = routes.find((r) => r.id === fromStop.routeId);
+    if (!route || !isValidTrip(fromStop, toStop, route.stops)) return [];
+    return [route];
+  }, [routes, fromStop, toStop]);
+
+  const tripError = useMemo(() => {
+    if (!fromStop || !toStop) return null;
+    if (!isSameRoute(fromStop, toStop)) {
+      return 'These stops are on different routes. Pick From and To on the same route.';
+    }
+    const route = routes.find((r) => r.id === fromStop.routeId);
+    if (route && !isValidTrip(fromStop, toStop, route.stops)) {
+      return 'Destination must be after your boarding stop on the route (e.g. ROOM → Mug Dukkan, not the reverse).';
+    }
+    return null;
+  }, [routes, fromStop, toStop]);
+
+  const activeRoute = useMemo(() => {
+    if (!fromStop || matchedRoutes.length === 0) return null;
+    if (selectedRoute?.id === fromStop.routeId) return selectedRoute;
+    return matchedRoutes[0];
+  }, [fromStop, matchedRoutes, selectedRoute]);
+
+  const handleSearch = async () => {
+    if (!fromStopId || !toStopId || matchedRoutes.length === 0) return;
+
+    const route = matchedRoutes[0];
+    setIsSearching(true);
+    setAvailableBuses(null);
+
+    try {
+      selectRoute(route.id);
+      const buses = await fetchAvailableBusesForRoute(route.id, route.name);
+      setAvailableBuses(buses);
+      if (buses.length === 0) {
+        toast.info('No buses found on this route right now');
+      }
+    } catch {
+      toast.error('Could not load buses. Please try again.');
+    } finally {
+      setIsSearching(false);
+    }
   };
 
-  const handleTrack = () => {
-    if (selectedRoute && selectedStopId) {
-      confirmSelection();
-    } else if (selectedRoute) {
-      selectRoute(selectedRoute.id);
-      confirmSelection();
+  const handleSelectBus = async (bus: AvailableBus) => {
+    setSelectingBusId(bus.id);
+    try {
+      selectBus(availableBusToFirestoreBus(bus));
+      await confirmSelection();
+    } finally {
+      setSelectingBusId(null);
     }
+  };
+
+  const handleFromChange = (stopId: string) => {
+    setAvailableBuses(null);
+    selectFromStop(stopId);
+  };
+
+  const handleToChange = (stopId: string) => {
+    setAvailableBuses(null);
+    selectToStop(stopId);
+  };
+
+  const firstName = profile?.name?.split(' ')[0] ?? 'Traveller';
+
+  const currentTrip =
+    fromStop && toStop && matchedRoutes.length > 0
+      ? {
+          routeId: fromStop.routeId,
+          routeName: fromStop.routeName,
+          fromStopId: fromStop.id,
+          fromStopName: fromStop.name,
+          toStopId: toStop.id,
+          toStopName: toStop.name,
+        }
+      : undefined;
+
+  const handleApplyFavourite = (trip: FavouriteTrip) => {
+    setAvailableBuses(null);
+    selectRoute(trip.routeId);
+    selectFromStop(trip.fromStopId);
+    selectToStop(trip.toStopId);
   };
 
   return (
     <div className="min-h-screen-safe bg-background flex flex-col">
-      <header className="bg-primary text-primary-foreground px-4 py-5">
-        <div className="flex items-center justify-between">
+      <header className="bg-primary text-primary-foreground px-4 pt-5 pb-16">
+        <div className="flex items-center justify-between max-w-lg mx-auto w-full">
           <div>
             <h1 className="text-xl font-bold">KMT Bus Tracker</h1>
-            <p className="text-sm opacity-90">Kolhapur Municipal Transport</p>
+            <p className="text-sm opacity-90">
+              {isLoggedIn ? `Hi ${firstName}, where are you going?` : 'Kolhapur Municipal Transport'}
+            </p>
           </div>
-          {!isLoggedIn && onOpenLogin && (
-            <Button variant="secondary" size="sm" onClick={onOpenLogin}>
-              <LogIn className="h-4 w-4 mr-1" /> Login
+          {isLoggedIn && (
+            <Button
+              variant="secondary"
+              size="icon"
+              className="rounded-full shrink-0"
+              onClick={logout}
+              aria-label="Logout"
+            >
+              <LogOut className="h-4 w-4" />
             </Button>
           )}
         </div>
       </header>
 
-      <main className="flex-1 px-4 py-6 space-y-6 max-w-lg mx-auto w-full">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            className="pl-10 h-12 rounded-xl"
-            placeholder="Search route, stop, or bus number..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+      <main className="flex-1 px-4 -mt-10 pb-8 max-w-lg mx-auto w-full space-y-6">
+        <TripSearchCard
+          stops={bookableStops}
+          fromStopId={fromStopId}
+          toStopId={toStopId}
+          onFromChange={handleFromChange}
+          onToChange={handleToChange}
+          onSearch={handleSearch}
+          canSearch={!!fromStopId && !!toStopId && matchedRoutes.length > 0}
+          isSearching={isSearching}
+        />
 
-        <div className="flex gap-2">
-          {(['route', 'stop', 'bus'] as const).map((mode) => (
-            <Button
-              key={mode}
-              size="sm"
-              variant={searchMode === mode ? 'default' : 'outline'}
-              onClick={() => setSearchMode(mode)}
-              className="flex-1 capitalize"
-            >
-              {mode === 'route' && <MapPin className="h-3 w-3 mr-1" />}
-              {mode === 'stop' && <MapPin className="h-3 w-3 mr-1" />}
-              {mode === 'bus' && <Bus className="h-3 w-3 mr-1" />}
-              {mode}
-            </Button>
-          ))}
-        </div>
+        {tripError && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 p-4 text-sm text-amber-900 dark:text-amber-100">
+            {tripError}
+          </div>
+        )}
 
-        {searchMode === 'route' && (
+        {fromStop && toStop && matchedRoutes.length > 0 && (
+          <div className="rounded-xl bg-secondary/60 px-4 py-3 text-sm">
+            <p className="text-muted-foreground">Your trip</p>
+            <p className="font-semibold text-foreground mt-0.5">
+              {fromStop.name} → {toStop.name}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">{fromStop.routeName}</p>
+          </div>
+        )}
+
+        {fromStop && toStop && activeRoute && availableBuses !== null && (
+          <DepotArrivalCard route={activeRoute} boardingStopId={fromStop.id} />
+        )}
+
+        {availableBuses !== null && (
           <section className="space-y-3">
-            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Select Route</h2>
-            {filteredRoutes.map((route) => (
-              <RouteCard
-                key={route.id}
-                route={route}
-                isSelected={selectedRoute?.id === route.id}
-                onSelect={() => selectRoute(route.id)}
-              />
-            ))}
+            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+              Available Buses ({availableBuses.length})
+            </h2>
+            {availableBuses.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+                No buses are assigned to this route yet. Try again later or pick a different trip.
+              </div>
+            ) : (
+              availableBuses.map((bus) => (
+                <BusResultCard
+                  key={`${bus.id}-${bus.busNumber}`}
+                  bus={bus}
+                  isSelecting={selectingBusId === bus.id}
+                  onSelect={() => handleSelectBus(bus)}
+                />
+              ))
+            )}
           </section>
-        )}
-
-        {searchMode === 'stop' && selectedRoute && (
-          <section className="space-y-3">
-            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Select Bus Stop</h2>
-            {selectedRoute.stops.map((stop) => (
-              <StopSelectCard
-                key={stop.id}
-                stop={stop}
-                isSelected={selectedStopId === stop.id}
-                onSelect={() => handleStopPick(stop.id)}
-              />
-            ))}
-          </section>
-        )}
-
-        {searchMode === 'bus' && (
-          <section className="glass-card p-4 text-sm text-muted-foreground">
-            Enter a bus number in the search box (e.g. KMT-001) and select a matching route to track live.
-          </section>
-        )}
-
-        {selectedRoute && (
-          <Button className="w-full h-12 rounded-xl text-base font-semibold" onClick={handleTrack}>
-            Track Live Bus
-          </Button>
         )}
 
         {isLoggedIn && profile && (
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1" size="sm">
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              size="sm"
+              onClick={() => setFavouritesOpen(true)}
+            >
               <Star className="h-4 w-4 mr-1" /> Favourites
             </Button>
-            <Button variant="outline" className="flex-1" size="sm">
-              <Megaphone className="h-4 w-4 mr-1" /> Announcements
+            <Button
+              variant="outline"
+              className="flex-1"
+              size="sm"
+              onClick={() => setAnnouncementsOpen(true)}
+            >
+              <Megaphone className="h-4 w-4 mr-1" /> Alerts
             </Button>
-            <Button variant="outline" className="flex-1" size="sm">
+            <Button
+              variant="outline"
+              className="flex-1"
+              size="sm"
+              onClick={() => setComplaintOpen(true)}
+            >
               <MessageSquareWarning className="h-4 w-4 mr-1" /> Complaint
             </Button>
           </div>
+        )}
+
+        <AnnouncementsSheet open={announcementsOpen} onOpenChange={setAnnouncementsOpen} />
+
+        {profile && (
+          <>
+            <FavouritesSheet
+              open={favouritesOpen}
+              onOpenChange={setFavouritesOpen}
+              passengerDocId={profile.id}
+              currentTrip={currentTrip}
+              onApplyTrip={handleApplyFavourite}
+            />
+            <ComplaintDialog
+              open={complaintOpen}
+              onOpenChange={setComplaintOpen}
+              passengerId={profile.id}
+              passengerName={profile.name}
+              routeId={fromStop?.routeId ?? selectedRoute?.id}
+              routeName={fromStop?.routeName ?? selectedRoute?.name}
+              stopId={fromStopId}
+              stopName={fromStop?.name}
+            />
+          </>
+        )}
+
+        {bookableStops.length > 0 && (
+          <p className="text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5">
+            <Bus className="h-3.5 w-3.5" />
+            {bookableStops.length} stops across {routes.length} routes
+          </p>
         )}
       </main>
     </div>

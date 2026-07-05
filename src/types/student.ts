@@ -5,6 +5,8 @@ export interface Student {
   email: string;
   selectedRouteId?: string;
   selectedStopId?: string;
+  selectedFromStopId?: string;
+  selectedToStopId?: string;
   routeName?: string; // Route name from student document (for quick subscription)
   hasCompletedSetup: boolean;
 
@@ -27,6 +29,15 @@ export interface Stop {
   name: string;
   order: number;
   estimatedTime?: string;
+  latitude?: number;
+  longitude?: number;
+  mapLink?: string;
+}
+
+/** Stop with route context for trip search (Redbus-style from/to). */
+export interface BookableStop extends Stop {
+  routeId: string;
+  routeName: string;
 }
 
 export type StopStatus = 'reached' | 'current' | 'pending';

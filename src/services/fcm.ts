@@ -36,6 +36,42 @@ export const isSupported = (): boolean => isNative || isWebSupported();
 let messagingInstance: ReturnType<typeof getMessaging> | null = null;
 let serviceWorkerRegistration: ServiceWorkerRegistration | null = null;
 
+const FCM_DB_NAMES = [
+  'firebase-messaging-database',
+  'firebase-installations-database',
+  'firebase-heartbeat-database',
+];
+
+async function clearFirebaseMessagingStorage(): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  await Promise.all(
+    FCM_DB_NAMES.map(
+      (name) =>
+        new Promise<void>((resolve) => {
+          const req = indexedDB.deleteDatabase(name);
+          req.onsuccess = () => resolve();
+          req.onerror = () => resolve();
+          req.onblocked = () => resolve();
+        })
+    )
+  );
+}
+
+async function resetServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
+  serviceWorkerRegistration = null;
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((reg) => reg.unregister()));
+  } catch (err) {
+    console.warn('[FCM] Failed to unregister service workers:', err);
+  }
+  return registerServiceWorker();
+}
+
+function isMessagingVersionError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'VersionError';
+}
+
 function getMessagingSafe() {
   if (!isWebSupported()) return null;
   if (messagingInstance) return messagingInstance;
@@ -66,7 +102,10 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
     return serviceWorkerRegistration;
   }
   try {
-    const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js", { scope: "/" });
+    const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js", {
+      scope: "/",
+      updateViaCache: "none",
+    });
     console.log("[FCM] Service worker registered:", registration);
     console.log("[FCM] Service worker scope:", registration.scope);
     console.log("[FCM] Service worker state:", registration.active?.state || registration.installing?.state || registration.waiting?.state);
@@ -300,8 +339,7 @@ export async function getFCMToken(retryAfterMs = 2000): Promise<string | null> {
     return null;
   }
 
-  try {
-    console.log("[FCM] Getting token with VAPID key...");
+  const requestToken = async (swRegistration: ServiceWorkerRegistration) => {
     const token = await getToken(messaging, {
       vapidKey: VAPID_KEY,
       serviceWorkerRegistration: swRegistration,
@@ -309,8 +347,27 @@ export async function getFCMToken(retryAfterMs = 2000): Promise<string | null> {
     if (token) console.log("[FCM] Token obtained successfully:", token.substring(0, 20) + "...");
     else console.warn("[FCM] getToken returned null/empty");
     return token;
+  };
+
+  try {
+    console.log("[FCM] Getting token with VAPID key...");
+    return await requestToken(swRegistration);
   } catch (err) {
     console.warn("[FCM] getToken error (will retry once):", err);
+
+    if (isMessagingVersionError(err)) {
+      console.warn("[FCM] Clearing stale messaging storage and re-registering service worker...");
+      await clearFirebaseMessagingStorage();
+      const freshRegistration = await resetServiceWorkerRegistration();
+      if (freshRegistration) {
+        try {
+          return await requestToken(freshRegistration);
+        } catch (retryErr) {
+          console.error("[FCM] getToken failed after storage reset:", retryErr);
+        }
+      }
+    }
+
     if (retryAfterMs > 0) {
       await new Promise((r) => setTimeout(r, retryAfterMs));
       try {

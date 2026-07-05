@@ -19,6 +19,9 @@ import {
   LiveBus,
   Complaint,
   Passenger,
+  AdminStop,
+  Announcement,
+  Depot,
 } from "@/types/firestore";
 
 // ==================== Routes ====================
@@ -58,6 +61,48 @@ export const subscribeToRoutes = (
   });
 };
 
+// ==================== Stops (admin-managed) ====================
+
+const isAdminManagedStop = (stop: AdminStop): boolean => {
+  if (stop.status === "inactive") return false;
+  return true;
+};
+
+export const getAdminStops = async (): Promise<AdminStop[]> => {
+  const stopsRef = collection(db, "stops");
+  const querySnapshot = await getDocs(stopsRef);
+
+  return querySnapshot.docs
+    .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as AdminStop))
+    .filter(isAdminManagedStop)
+    .sort((a, b) => a.order - b.order);
+};
+
+export const getStopsByRouteId = async (routeId: string): Promise<AdminStop[]> => {
+  const stopsRef = collection(db, "stops");
+  const q = query(stopsRef, where("routeId", "==", routeId));
+  const querySnapshot = await getDocs(q);
+
+  return querySnapshot.docs
+    .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as AdminStop))
+    .filter(isAdminManagedStop)
+    .sort((a, b) => a.order - b.order);
+};
+
+export const subscribeToAdminStops = (
+  callback: (stops: AdminStop[]) => void
+): (() => void) => {
+  const stopsRef = collection(db, "stops");
+
+  return onSnapshot(stopsRef, (querySnapshot) => {
+    const stops = querySnapshot.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as AdminStop))
+      .filter(isAdminManagedStop)
+      .sort((a, b) => a.order - b.order);
+    callback(stops);
+  });
+};
+
 // ==================== Live Buses ====================
 export const getLiveBuses = async (): Promise<LiveBus[]> => {
   const liveBusesRef = collection(db, "liveBuses");
@@ -81,6 +126,19 @@ export const getLiveBusByRouteName = async (
     return { id: doc.id, ...doc.data() } as LiveBus;
   }
   return null;
+};
+
+export const getLiveBusesByRouteName = async (
+  routeName: string
+): Promise<LiveBus[]> => {
+  const liveBusesRef = collection(db, "liveBuses");
+  const q = query(liveBusesRef, where("routeName", "==", routeName));
+  const querySnapshot = await getDocs(q);
+
+  return querySnapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...docSnap.data(),
+  })) as LiveBus[];
 };
 
 export const getLiveBusByRouteId = async (
@@ -156,15 +214,19 @@ export const getBusById = async (busId: string): Promise<Bus | null> => {
 };
 
 export const getBusByRouteId = async (routeId: string): Promise<Bus | null> => {
+  const buses = await getBusesByRouteId(routeId);
+  return buses[0] ?? null;
+};
+
+export const getBusesByRouteId = async (routeId: string): Promise<Bus[]> => {
   const busesRef = collection(db, "buses");
   const q = query(busesRef, where("assignedRouteId", "==", routeId));
   const querySnapshot = await getDocs(q);
 
-  if (!querySnapshot.empty) {
-    const doc = querySnapshot.docs[0];
-    return { id: doc.id, ...doc.data() } as Bus;
-  }
-  return null;
+  return querySnapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...docSnap.data(),
+  })) as Bus[];
 };
 
 export const getBusByNumber = async (busNumber: string): Promise<Bus | null> => {
@@ -217,16 +279,59 @@ export const getDriverById = async (driverId: string): Promise<Driver | null> =>
   return null;
 };
 
+// ==================== Depots ====================
+export const getDepots = async (): Promise<Depot[]> => {
+  const depotsRef = collection(db, "depots");
+  const querySnapshot = await getDocs(depotsRef);
+
+  return querySnapshot.docs
+    .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Depot))
+    .filter((d) => d.active !== false);
+};
+
+// ==================== Announcements ====================
+export const getAnnouncements = async (): Promise<Announcement[]> => {
+  const announcementsRef = collection(db, "announcements");
+  const q = query(announcementsRef, orderBy("createdAt", "desc"));
+  const querySnapshot = await getDocs(q);
+
+  return querySnapshot.docs
+    .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Announcement))
+    .filter((a) => a.active !== false);
+};
+
+export const subscribeToAnnouncements = (
+  callback: (announcements: Announcement[]) => void
+): (() => void) => {
+  const announcementsRef = collection(db, "announcements");
+  const q = query(announcementsRef, orderBy("createdAt", "desc"));
+
+  return onSnapshot(
+    q,
+    (querySnapshot) => {
+      const announcements = querySnapshot.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Announcement))
+        .filter((a) => a.active !== false);
+      callback(announcements);
+    },
+    () => callback([])
+  );
+};
+
 // ==================== Complaints ====================
+
+const stripUndefined = <T extends Record<string, unknown>>(obj: T): Partial<T> =>
+  Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined)) as Partial<T>;
+
 export const createComplaint = async (
   complaint: Omit<Complaint, "id" | "createdAt" | "updatedAt">
 ): Promise<string> => {
   const complaintsRef = collection(db, "complaints");
-  const newComplaint = {
+  const newComplaint = stripUndefined({
     ...complaint,
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
-  };
+  });
 
   const docRef = await addDoc(complaintsRef, newComplaint);
   return docRef.id;

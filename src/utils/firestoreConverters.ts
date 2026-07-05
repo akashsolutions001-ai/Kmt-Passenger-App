@@ -1,27 +1,115 @@
-import { Route as FirestoreRoute, LiveBus, RouteStop, LiveBusStop } from "@/types/firestore";
-import { Route, Stop, BusState, StopStatus, BusStatus } from "@/types/passenger";
+import {
+  Route as FirestoreRoute,
+  LiveBus,
+  RouteStop,
+  LiveBusStop,
+  AdminStop,
+} from "@/types/firestore";
+import { Route, Stop, BusState, StopStatus, BusStatus } from "@/types/student";
+import { parseStopOrder } from "@/utils/tripStops";
+import { toCoordinateNumber } from "@/utils/mapCoordinates";
 
-/**
- * Convert Firestore Route to app Route format
- */
-export const convertFirestoreRouteToAppRoute = (firestoreRoute: FirestoreRoute): Route => {
-  // Ensure stops is an array and handle edge cases
-  const stops = Array.isArray(firestoreRoute.stops)
-    ? firestoreRoute.stops
-      .filter((stop: RouteStop) => stop && stop.id && stop.name) // Filter out invalid stops
-      .map((stop: RouteStop) => ({
-        id: String(stop.id),
-        name: String(stop.name),
-        order: typeof stop.order === 'number' ? stop.order : 0,
-      }))
-      .sort((a, b) => a.order - b.order) // Ensure stops are sorted by order
-    : [];
+const readLat = (stop: Record<string, unknown>): number | undefined =>
+  toCoordinateNumber(stop.latitude ?? stop.lat);
+
+const readLng = (stop: Record<string, unknown>): number | undefined =>
+  toCoordinateNumber(stop.longitude ?? stop.lng ?? stop.lang);
+
+const mapAdminStopToAppStop = (stop: AdminStop): Stop => ({
+  id: String(stop.id),
+  name: String(stop.name),
+  order: parseStopOrder(stop.order),
+  estimatedTime: stop.estimatedTime,
+  latitude: readLat(stop as AdminStop & Record<string, unknown>),
+  longitude: readLng(stop as AdminStop & Record<string, unknown>),
+});
+
+const mapEmbeddedStopToAppStop = (
+  embedded: RouteStop,
+  catalogById: Map<string, AdminStop>
+): Stop => {
+  const raw = embedded as RouteStop & Record<string, unknown>;
+  const catalog = embedded.catalogStopId
+    ? catalogById.get(embedded.catalogStopId)
+    : undefined;
+
+  const latitude =
+    readLat(raw) ??
+    (catalog ? readLat(catalog as AdminStop & Record<string, unknown>) : undefined);
+  const longitude =
+    readLng(raw) ??
+    (catalog ? readLng(catalog as AdminStop & Record<string, unknown>) : undefined);
 
   return {
+    id: String(embedded.id),
+    name: String(embedded.name),
+    order: parseStopOrder(embedded.order),
+    latitude,
+    longitude,
+  };
+};
+
+const routeMatchesStop = (route: FirestoreRoute, stop: AdminStop): boolean =>
+  stop.routeId === route.id ||
+  stop.routeId === route.name ||
+  stop.routeName === route.id ||
+  stop.routeName === route.name;
+
+const getEmbeddedRouteStops = (firestoreRoute: FirestoreRoute): RouteStop[] => {
+  if (!Array.isArray(firestoreRoute.stops)) return [];
+  return firestoreRoute.stops.filter(
+    (stop: RouteStop) => stop && stop.id && stop.name
+  );
+};
+
+const resolveRouteStops = (
+  firestoreRoute: FirestoreRoute,
+  adminStops: AdminStop[] = []
+): Stop[] => {
+  const catalogById = new Map(adminStops.map((stop) => [stop.id, stop]));
+  const embeddedList = getEmbeddedRouteStops(firestoreRoute);
+
+  // Route embedded stops are the source of truth (order, names, ids).
+  // Coordinates come from embedded lat/lng OR admin catalog via catalogStopId.
+  if (embeddedList.length > 0) {
+    return embeddedList
+      .map((embedded) => mapEmbeddedStopToAppStop(embedded, catalogById))
+      .sort((a, b) => a.order - b.order);
+  }
+
+  const byRoute = adminStops
+    .filter((stop) => routeMatchesStop(firestoreRoute, stop))
+    .map(mapAdminStopToAppStop);
+
+  if (byRoute.length > 0) {
+    return byRoute.sort((a, b) => a.order - b.order);
+  }
+
+  if (Array.isArray(firestoreRoute.stopIds) && firestoreRoute.stopIds.length > 0) {
+    const byIds = adminStops
+      .filter((stop) => firestoreRoute.stopIds!.includes(stop.id))
+      .map(mapAdminStopToAppStop);
+    if (byIds.length > 0) {
+      return byIds.sort((a, b) => a.order - b.order);
+    }
+  }
+
+  return [];
+};
+
+/**
+ * Convert Firestore Route to app Route format.
+ * Stops: embedded route array first, coordinates from lat/lng or catalogStopId.
+ */
+export const convertFirestoreRouteToAppRoute = (
+  firestoreRoute: FirestoreRoute,
+  adminStops: AdminStop[] = []
+): Route => {
+  return {
     id: firestoreRoute.id,
-    name: firestoreRoute.name || '',
+    name: firestoreRoute.name || "",
     description: firestoreRoute.startingPoint || "",
-    stops,
+    stops: resolveRouteStops(firestoreRoute, adminStops),
   };
 };
 
@@ -39,16 +127,13 @@ export const convertLiveBusToBusState = (liveBus: LiveBus | null): BusState => {
 
   const stops = Array.isArray(liveBus.stops) ? liveBus.stops : [];
 
-  // Find the current stop index
   const currentStopIndex = stops.length > 0
     ? stops.findIndex((stop: LiveBusStop) => stop.status === "current")
     : -1;
 
-  // Determine bus status
   let status: BusStatus = "not-started";
 
   if (stops.length > 0) {
-    // If we have stops data, use stop statuses
     const allReached = stops.every((stop) => stop.status === "reached");
     const hasCurrent = stops.some((stop) => stop.status === "current");
 
@@ -58,26 +143,28 @@ export const convertLiveBusToBusState = (liveBus: LiveBus | null): BusState => {
       status = "running";
     }
   } else {
-    // No stops array — use routeState from driver data
-    const routeState = (liveBus as any).routeState || (liveBus as any).status;
-    if (routeState === 'in_progress' || routeState === 'running') {
+    const routeState = (liveBus as { routeState?: string; status?: string }).routeState
+      || (liveBus as { routeState?: string; status?: string }).status;
+    if (routeState === "in_progress" || routeState === "running") {
       status = "running";
-    } else if (routeState === 'completed' || routeState === 'finished') {
+    } else if (routeState === "completed" || routeState === "finished") {
       status = "completed";
     }
   }
 
-  // Handle updatedAt — could be Firestore Timestamp, Date, or number
   let lastUpdated: Date;
   try {
-    if (liveBus.updatedAt && typeof (liveBus.updatedAt as any).toDate === 'function') {
-      lastUpdated = (liveBus.updatedAt as any).toDate();
+    if (liveBus.updatedAt && typeof (liveBus.updatedAt as { toDate?: () => Date }).toDate === "function") {
+      lastUpdated = (liveBus.updatedAt as { toDate: () => Date }).toDate();
     } else if (liveBus.updatedAt instanceof Date) {
       lastUpdated = liveBus.updatedAt;
-    } else if (typeof (liveBus as any).timestamp === 'number') {
-      lastUpdated = new Date((liveBus as any).timestamp);
     } else {
-      lastUpdated = new Date();
+      const legacyTimestamp = (liveBus as unknown as { timestamp?: number }).timestamp;
+      if (typeof legacyTimestamp === "number") {
+        lastUpdated = new Date(legacyTimestamp);
+      } else {
+        lastUpdated = new Date();
+      }
     }
   } catch {
     lastUpdated = new Date();
@@ -90,9 +177,6 @@ export const convertLiveBusToBusState = (liveBus: LiveBus | null): BusState => {
   };
 };
 
-/**
- * Get stop status from LiveBus
- */
 export const getStopStatusFromLiveBus = (
   liveBus: LiveBus | null,
   stopId: string
@@ -106,9 +190,6 @@ export const getStopStatusFromLiveBus = (
   return stop.status;
 };
 
-/**
- * Get stop status by index from LiveBus
- */
 export const getStopStatusByIndex = (
   liveBus: LiveBus | null,
   index: number

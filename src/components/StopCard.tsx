@@ -22,6 +22,10 @@ interface StopCardProps {
   busStatus?: BusStatus;
   /** When status is reached, show "Reached at HH:MM" (persists until next trip) */
   reachedAt?: number;
+  /** Clock time e.g. "2:15 AM" for pending/current stops */
+  estimatedArrivalTime?: string;
+  /** Relative ETA e.g. "5 mins" for pending/current stops */
+  estimatedArrivalEta?: string;
   /** When status is current, show "Reach by {estimatedTime}" */
   showReachBy?: boolean;
 }
@@ -33,18 +37,25 @@ export const StopCard: React.FC<StopCardProps> = ({
   isLast,
   busStatus,
   reachedAt,
+  estimatedArrivalTime,
+  estimatedArrivalEta,
   showReachBy,
 }) => {
   const badgeLabel =
     status === 'pending' && busStatus === 'not-started' ? 'Bus Not Started' : undefined;
+
   const timeLabel =
     status === 'reached' && reachedAt != null
       ? `Reached at ${formatReachedTime(reachedAt)}`
-      : showReachBy && stop.estimatedTime
-        ? `Reach by ${stop.estimatedTime}`
-        : stop.estimatedTime
-          ? `Est. ${stop.estimatedTime}`
-          : null;
+      : (status === 'current' || status === 'pending') && estimatedArrivalTime
+        ? `Est. arrival ${estimatedArrivalTime}${
+            estimatedArrivalEta ? ` (~${estimatedArrivalEta})` : ''
+          }`
+        : showReachBy && stop.estimatedTime
+          ? `Reach by ${stop.estimatedTime}`
+          : stop.estimatedTime
+            ? `Est. ${stop.estimatedTime}`
+            : null;
 
   return (
     <div

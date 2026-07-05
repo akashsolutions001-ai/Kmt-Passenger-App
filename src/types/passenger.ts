@@ -6,6 +6,8 @@ export interface Passenger {
   phone?: string;
   selectedRouteId?: string;
   selectedStopId?: string;
+  selectedFromStopId?: string;
+  selectedToStopId?: string;
   routeName?: string;
   favouriteRoutes?: string[];
   favouriteStops?: string[];

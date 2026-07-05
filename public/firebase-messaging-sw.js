@@ -1,28 +1,24 @@
 /**
- * Firebase Cloud Messaging service worker for background/closed-tab notifications.
- * Uses Firebase compat SDK (required in service worker context).
- * Do not use ES modules here; use importScripts.
+ * Firebase Cloud Messaging service worker (must match src/lib/firebase.ts project + SDK major version).
  */
 
-importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/12.8.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/12.8.0/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: 'AIzaSyBe12v3ULPNlAxapSZ1zu5eFoxxHzpY-rU',
-  authDomain: 'college-bus-tracking-903e7.firebaseapp.com',
-  databaseURL: 'https://college-bus-tracking-903e7-default-rtdb.firebaseio.com',
-  projectId: 'college-bus-tracking-903e7',
-  storageBucket: 'college-bus-tracking-903e7.firebasestorage.app',
-  messagingSenderId: '898454276553',
-  appId: '1:898454276553:web:f09ddeada5625dd04d4018',
-  measurementId: 'G-ST576M02S7'
+  apiKey: 'AIzaSyBncLpnXmd5KIvE8Sq4iKi1ug4bl4hxhqk',
+  authDomain: 'kmt-tracker-62159.firebaseapp.com',
+  databaseURL: 'https://kmt-tracker-62159-default-rtdb.firebaseio.com',
+  projectId: 'kmt-tracker-62159',
+  storageBucket: 'kmt-tracker-62159.firebasestorage.app',
+  messagingSenderId: '1093592499284',
+  appId: '1:1093592499284:web:f105d5d3a425aeef9859c1',
+  measurementId: 'G-4ELB2NRC27',
 });
 
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message:', payload);
-
   const notificationTitle = payload.notification?.title || payload.data?.title || 'Bus Tracker';
   const notificationOptions = {
     body: payload.notification?.body || payload.data?.body || '',
@@ -32,14 +28,13 @@ messaging.onBackgroundMessage((payload) => {
     requireInteraction: false,
     renotify: true,
     data: payload.data || {},
-    silent: false
+    silent: false,
   };
 
   return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
 self.addEventListener('notificationclick', (event) => {
-  console.log('[firebase-messaging-sw.js] Notification clicked:', event);
   event.notification.close();
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
@@ -56,13 +51,10 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Log when SW is installed and activated
-self.addEventListener('install', (event) => {
-  console.log('[firebase-messaging-sw.js] Service Worker installed');
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('[firebase-messaging-sw.js] Service Worker activated');
   event.waitUntil(clients.claim());
 });

@@ -1,5 +1,5 @@
 import { useMemo, useEffect } from 'react';
-import { useStudent } from '@/context/StudentContext';
+import { useAuth } from '@/context/AuthContext';
 import { NotificationBell } from '@/components/NotificationBell';
 import { BusStatusCard } from '@/components/BusStatusCard';
 import { StopCard } from '@/components/StopCard';
@@ -7,12 +7,16 @@ import { LiveBusMap, BusPosition, StopMarker } from '@/components/LiveBusMap';
 import { Footer } from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { StopStatus } from '@/types/student';
-import { LogOut, MapPin, Bus, User, BadgeCheck } from 'lucide-react';
+import { estimateArrivalAtStop } from '@/utils/geo';
+import { resolveStopCoordinates } from '@/utils/mapCoordinates';
+import { LogOut, MapPin, Bus, User, BadgeCheck, ArrowLeft, Search } from 'lucide-react';
 
 export const TrackingScreen: React.FC = () => {
   const {
     student,
     selectedRoute,
+    fromStopId,
+    toStopId,
     liveBus,
     realtimeLocation,
     realtimeRouteState,
@@ -20,8 +24,9 @@ export const TrackingScreen: React.FC = () => {
     realtimeStops,
     busState,
     refreshTracking,
+    backToSearch,
     logout,
-  } = useStudent();
+  } = useAuth();
 
   if (!selectedRoute) return null;
 
@@ -94,9 +99,50 @@ export const TrackingScreen: React.FC = () => {
   // Get effective bus status - reset to not-started if completion expired
   const effectiveStatus = isCompletedButExpired() ? 'not-started' : busState.status;
 
-  const passengerStop = profile?.selectedStopId
-    ? selectedRoute.stops.find((s) => s.id === profile.selectedStopId)
+  const boardingStopId = fromStopId ?? profile?.selectedFromStopId ?? profile?.selectedStopId;
+  const destinationStopId = toStopId ?? profile?.selectedToStopId;
+
+  const fromStop = boardingStopId
+    ? selectedRoute.stops.find((s) => s.id === boardingStopId)
     : undefined;
+  const toStop = destinationStopId
+    ? selectedRoute.stops.find((s) => s.id === destinationStopId)
+    : undefined;
+
+  const visibleStops = useMemo(() => {
+    if (!fromStop || !toStop) return selectedRoute.stops;
+    return selectedRoute.stops.filter(
+      (s) => s.order >= fromStop.order && s.order <= toStop.order
+    );
+  }, [selectedRoute.stops, fromStop, toStop]);
+
+  const busLocation = useMemo(() => {
+    if (realtimeLocation?.latitude == null || realtimeLocation?.longitude == null) return null;
+    return {
+      latitude: realtimeLocation.latitude,
+      longitude: realtimeLocation.longitude,
+    };
+  }, [realtimeLocation?.latitude, realtimeLocation?.longitude]);
+
+  const currentStopIndex = useMemo(() => {
+    for (let i = 0; i < selectedRoute.stops.length; i++) {
+      if (getStopStatus(i) === 'current') return i;
+    }
+    if (effectiveStatus === 'not-started') return -1;
+    for (let i = selectedRoute.stops.length - 1; i >= 0; i--) {
+      if (getStopStatus(i) === 'reached') return i;
+    }
+    return busState.currentStopIndex;
+  }, [
+    selectedRoute.stops,
+    realtimeStops,
+    busState.status,
+    busState.currentStopIndex,
+    busState.lastUpdated,
+    effectiveStatus,
+  ]);
+
+  const busStarted = effectiveStatus !== 'not-started';
   const busNumber = realtimeLocation?.busNumber ?? liveBus?.busNumber;
   const driverName = realtimeLocation?.driverName ?? liveBus?.driverName;
   const gpsText =
@@ -129,10 +175,35 @@ export const TrackingScreen: React.FC = () => {
   // Transform route stops to map markers (with static coordinates for demo)
   // In production, these would come from Firestore route data with actual coordinates
   const stopMarkers: StopMarker[] = useMemo(() => {
-    // For now, return empty array - stops need latitude/longitude in route data
-    // This can be populated when route data includes stop coordinates
-    return [];
-  }, [selectedRoute.stops, realtimeStops, profile?.selectedStopId]);
+    return visibleStops
+      .map((stop) => {
+        const coords = resolveStopCoordinates(stop);
+        if (!coords) return null;
+
+        const index = selectedRoute.stops.findIndex((s) => s.id === stop.id);
+        const status = getStopStatus(index);
+
+        return {
+          id: stop.id,
+          name: stop.name,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          order: stop.order,
+          status,
+          isStudentStop: stop.id === boardingStopId,
+        };
+      })
+      .filter((marker): marker is StopMarker => marker !== null);
+  }, [
+    visibleStops,
+    selectedRoute.stops,
+    boardingStopId,
+    realtimeStops,
+    busState.status,
+    busState.currentStopIndex,
+    busState.lastUpdated,
+    effectiveStatus,
+  ]);
 
   // Get route state for map
   const routeStateForMap = useMemo(() => {
@@ -182,13 +253,20 @@ export const TrackingScreen: React.FC = () => {
     <div className="min-h-screen-safe bg-background flex flex-col overflow-hidden">
       {/* Header - do not shrink */}
       <header className="flex-shrink-0 bg-card border-b border-border px-4 py-4 sticky top-0 z-10 overflow-hidden">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={backToSearch}
+              className="p-2 -ml-2 rounded-full hover:bg-secondary transition-colors shrink-0"
+              aria-label="Back to search"
+            >
+              <ArrowLeft className="w-5 h-5 text-foreground" />
+            </button>
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
               <User className="w-5 h-5 text-primary" />
             </div>
-            <div>
-              <h1 className="font-semibold text-foreground">{profile?.name ?? 'KMT Passenger'}</h1>
+            <div className="min-w-0">
+              <h1 className="font-semibold text-foreground truncate">{profile?.name ?? 'KMT Passenger'}</h1>
               <p className="text-xs text-muted-foreground">Passenger</p>
             </div>
           </div>
@@ -205,8 +283,8 @@ export const TrackingScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Route, Stop & Bus info */}
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 [contain:layout]">
+        {/* Route, From/To & Bus info */}
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 [contain:layout]">
           <div className="flex items-center gap-2 px-3 py-2 bg-secondary rounded-lg min-w-0">
             <Bus className="w-4 h-4 text-primary flex-shrink-0" />
             <div className="min-w-0">
@@ -220,9 +298,19 @@ export const TrackingScreen: React.FC = () => {
           <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-lg border border-primary/20 min-w-0">
             <MapPin className="w-4 h-4 text-primary flex-shrink-0" />
             <div className="min-w-0">
-              <p className="text-[11px] uppercase tracking-wide text-primary/80">Your stop</p>
+              <p className="text-[11px] uppercase tracking-wide text-primary/80">From</p>
               <p className="text-sm font-medium text-primary truncate">
-                {passengerStop?.name ?? 'Your stop'}
+                {fromStop?.name ?? 'Boarding stop'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 px-3 py-2 bg-accent/10 rounded-lg border border-accent/20 min-w-0">
+            <MapPin className="w-4 h-4 text-accent flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-wide text-accent/80">To</p>
+              <p className="text-sm font-medium text-foreground truncate">
+                {toStop?.name ?? 'Destination'}
               </p>
             </div>
           </div>
@@ -269,32 +357,54 @@ export const TrackingScreen: React.FC = () => {
           </h2>
 
           <div className="space-y-2">
-            {selectedRoute.stops.map((stop, index) => {
+            {visibleStops.map((stop) => {
+              const index = selectedRoute.stops.findIndex((s) => s.id === stop.id);
               const status = getStopStatus(index);
+              const arrivalEstimate =
+                status === 'reached'
+                  ? null
+                  : estimateArrivalAtStop(
+                      selectedRoute.stops,
+                      index,
+                      currentStopIndex,
+                      busLocation,
+                      busStarted
+                    );
               return (
                 <StopCard
                   key={stop.id}
                   stop={stop}
                   status={status}
-                  isStudentStop={stop.id === profile?.selectedStopId}
-                  isLast={index === selectedRoute.stops.length - 1}
+                  isStudentStop={stop.id === boardingStopId}
+                  isLast={stop.id === visibleStops[visibleStops.length - 1]?.id}
                   busStatus={effectiveStatus}
                   reachedAt={
                     status === 'reached'
                       ? getReachedAt(stop.id, stop.order, stop.name) ?? fallbackReachedAt
                       : undefined
                   }
+                  estimatedArrivalTime={arrivalEstimate?.arrivalTime}
+                  estimatedArrivalEta={arrivalEstimate?.etaLabel}
                   showReachBy={status === 'current'}
                 />
               );
             })}
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-11 rounded-xl sm:flex-1"
+              onClick={backToSearch}
+            >
+              <Search className="w-4 h-4 mr-2" />
+              Search other buses
+            </Button>
             <Button
               type="button"
               variant="secondary"
-              className="w-full h-11 rounded-xl"
+              className="w-full h-11 rounded-xl sm:flex-1"
               onClick={refreshTracking}
             >
               Refresh
@@ -313,12 +423,18 @@ export const TrackingScreen: React.FC = () => {
             driverName={driverName}
             routeState={routeStateForMap}
             stops={stopMarkers}
-            studentStopId={profile?.selectedStopId}
-            height={280}
+            studentStopId={boardingStopId}
+            height={320}
             autoCenter={false}
             showPath={true}
+            showRouteLine={true}
             maxPathPoints={100}
           />
+          {stopMarkers.length === 0 && (
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              Add latitude and longitude on route stops (or in the stops catalog via catalogStopId) to show them on the map.
+            </p>
+          )}
         </div>
       </main>
 

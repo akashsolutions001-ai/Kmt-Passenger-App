@@ -1,12 +1,10 @@
-import { useState } from 'react';
-import { StudentProvider, useStudent } from '@/context/StudentContext';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { LoginScreen } from '@/screens/LoginScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { TrackingScreen } from '@/screens/TrackingScreen';
 
 const AppContent: React.FC = () => {
-  const { isLoggedIn, isGuest, selectedRoute, trackingReady } = useStudent();
-  const [showLogin, setShowLogin] = useState(false);
+  const { isLoggedIn, isGuest, selectedRoute, trackingReady } = useAuth();
 
   const canTrack = (isLoggedIn || isGuest) && selectedRoute && trackingReady;
 
@@ -14,12 +12,8 @@ const AppContent: React.FC = () => {
     return <LoginScreen />;
   }
 
-  if (showLogin && !isLoggedIn) {
-    return <LoginScreen />;
-  }
-
   if (!canTrack) {
-    return <HomeScreen onOpenLogin={() => setShowLogin(true)} />;
+    return <HomeScreen />;
   }
 
   return <TrackingScreen />;
@@ -27,11 +21,11 @@ const AppContent: React.FC = () => {
 
 const Index = () => {
   return (
-    <StudentProvider>
+    <AuthProvider>
       <div className="min-h-screen-safe bg-background">
         <AppContent />
       </div>
-    </StudentProvider>
+    </AuthProvider>
   );
 };
 

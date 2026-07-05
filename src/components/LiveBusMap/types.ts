@@ -19,6 +19,7 @@ export interface StopMarker {
     order: number;
     status: 'pending' | 'current' | 'reached';
     isStudentStop?: boolean;
+    mapLink?: string;
 }
 
 export interface LiveBusMapProps {
@@ -40,6 +41,8 @@ export interface LiveBusMapProps {
     autoCenter?: boolean;
     /** Show path trail of bus movement */
     showPath?: boolean;
+    /** Show planned route line along roads between stops */
+    showRouteLine?: boolean;
     /** Maximum points to keep in path history */
     maxPathPoints?: number;
     /** Callback when map is clicked */

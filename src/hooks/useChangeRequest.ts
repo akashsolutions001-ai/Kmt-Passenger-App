@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react';
-import { useStudent } from '@/context/StudentContext';
+import { useAuth } from '@/context/AuthContext';
 import { createChangeRequest } from '@/services/firestore';
 import { Timestamp } from 'firebase/firestore';
 
 export const useChangeRequest = () => {
-  const { student, selectedRoute } = useStudent();
+  const { student, selectedRoute } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
