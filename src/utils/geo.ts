@@ -234,6 +234,47 @@ export function distanceMeters(
   return haversineKm(lat1, lon1, lat2, lon2) * 1000;
 }
 
+export interface NearestStopResult {
+  stop: Stop;
+  distanceM: number;
+  distanceLabel: string;
+}
+
+/** Nearest route stop with coordinates to a GPS point (optionally within order range). */
+export function findNearestStopOnRoute(
+  stops: Stop[],
+  latitude: number,
+  longitude: number,
+  options?: { minOrder?: number; maxOrder?: number }
+): NearestStopResult | null {
+  const minOrder = options?.minOrder ?? -Infinity;
+  const maxOrder = options?.maxOrder ?? Infinity;
+
+  let nearest: NearestStopResult | null = null;
+
+  for (const stop of stops) {
+    if (stop.order < minOrder || stop.order > maxOrder) continue;
+    if (!hasCoordinates(stop)) continue;
+
+    const distanceM = distanceMeters(
+      latitude,
+      longitude,
+      stop.latitude!,
+      stop.longitude!
+    );
+
+    if (!nearest || distanceM < nearest.distanceM) {
+      nearest = {
+        stop,
+        distanceM,
+        distanceLabel: formatDistance(distanceM / 1000),
+      };
+    }
+  }
+
+  return nearest;
+}
+
 export function estimateBoardingArrival(
   route: Route,
   boardingStopId: string,

@@ -1,19 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
-import { DepotArrivalCard } from '@/components/DepotArrivalCard';
-import { BusResultCard } from '@/components/BusResultCard';
 import { TripSearchCard } from '@/components/TripSearchCard';
 import { AnnouncementsSheet } from '@/components/AnnouncementsSheet';
 import { ComplaintDialog } from '@/components/ComplaintDialog';
 import { FavouritesSheet } from '@/components/FavouritesSheet';
 import { FavouriteTrip } from '@/types/firestore';
 import { isSameRoute, isValidTrip } from '@/utils/tripStops';
-import {
-  AvailableBus,
-  availableBusToFirestoreBus,
-  fetchAvailableBusesForRoute,
-} from '@/utils/busSearch';
+import { fetchAvailableBusesForRoute } from '@/utils/busSearch';
 import { Bus, LogOut, Star, Megaphone, MessageSquareWarning } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -21,14 +15,12 @@ export const HomeScreen: React.FC = () => {
   const {
     routes,
     bookableStops,
-    selectedRoute,
     selectRoute,
-    selectBus,
     selectFromStop,
     selectToStop,
     fromStopId,
     toStopId,
-    confirmSelection,
+    showBusResults,
     isLoggedIn,
     passenger,
     student,
@@ -37,8 +29,6 @@ export const HomeScreen: React.FC = () => {
 
   const profile = passenger ?? student;
   const [isSearching, setIsSearching] = useState(false);
-  const [selectingBusId, setSelectingBusId] = useState<string | null>(null);
-  const [availableBuses, setAvailableBuses] = useState<AvailableBus[] | null>(null);
   const [announcementsOpen, setAnnouncementsOpen] = useState(false);
   const [complaintOpen, setComplaintOpen] = useState(false);
   const [favouritesOpen, setFavouritesOpen] = useState(false);
@@ -65,51 +55,24 @@ export const HomeScreen: React.FC = () => {
     return null;
   }, [routes, fromStop, toStop]);
 
-  const activeRoute = useMemo(() => {
-    if (!fromStop || matchedRoutes.length === 0) return null;
-    if (selectedRoute?.id === fromStop.routeId) return selectedRoute;
-    return matchedRoutes[0];
-  }, [fromStop, matchedRoutes, selectedRoute]);
-
   const handleSearch = async () => {
     if (!fromStopId || !toStopId || matchedRoutes.length === 0) return;
 
     const route = matchedRoutes[0];
     setIsSearching(true);
-    setAvailableBuses(null);
 
     try {
       selectRoute(route.id);
       const buses = await fetchAvailableBusesForRoute(route.id, route.name);
-      setAvailableBuses(buses);
       if (buses.length === 0) {
         toast.info('No buses found on this route right now');
       }
+      showBusResults(buses);
     } catch {
       toast.error('Could not load buses. Please try again.');
     } finally {
       setIsSearching(false);
     }
-  };
-
-  const handleSelectBus = async (bus: AvailableBus) => {
-    setSelectingBusId(bus.id);
-    try {
-      selectBus(availableBusToFirestoreBus(bus));
-      await confirmSelection();
-    } finally {
-      setSelectingBusId(null);
-    }
-  };
-
-  const handleFromChange = (stopId: string) => {
-    setAvailableBuses(null);
-    selectFromStop(stopId);
-  };
-
-  const handleToChange = (stopId: string) => {
-    setAvailableBuses(null);
-    selectToStop(stopId);
   };
 
   const firstName = profile?.name?.split(' ')[0] ?? 'Traveller';
@@ -127,7 +90,6 @@ export const HomeScreen: React.FC = () => {
       : undefined;
 
   const handleApplyFavourite = (trip: FavouriteTrip) => {
-    setAvailableBuses(null);
     selectRoute(trip.routeId);
     selectFromStop(trip.fromStopId);
     selectToStop(trip.toStopId);
@@ -162,8 +124,8 @@ export const HomeScreen: React.FC = () => {
           stops={bookableStops}
           fromStopId={fromStopId}
           toStopId={toStopId}
-          onFromChange={handleFromChange}
-          onToChange={handleToChange}
+          onFromChange={selectFromStop}
+          onToChange={selectToStop}
           onSearch={handleSearch}
           canSearch={!!fromStopId && !!toStopId && matchedRoutes.length > 0}
           isSearching={isSearching}
@@ -173,42 +135,6 @@ export const HomeScreen: React.FC = () => {
           <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 p-4 text-sm text-amber-900 dark:text-amber-100">
             {tripError}
           </div>
-        )}
-
-        {fromStop && toStop && matchedRoutes.length > 0 && (
-          <div className="rounded-xl bg-secondary/60 px-4 py-3 text-sm">
-            <p className="text-muted-foreground">Your trip</p>
-            <p className="font-semibold text-foreground mt-0.5">
-              {fromStop.name} → {toStop.name}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">{fromStop.routeName}</p>
-          </div>
-        )}
-
-        {fromStop && toStop && activeRoute && availableBuses !== null && (
-          <DepotArrivalCard route={activeRoute} boardingStopId={fromStop.id} />
-        )}
-
-        {availableBuses !== null && (
-          <section className="space-y-3">
-            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-              Available Buses ({availableBuses.length})
-            </h2>
-            {availableBuses.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
-                No buses are assigned to this route yet. Try again later or pick a different trip.
-              </div>
-            ) : (
-              availableBuses.map((bus) => (
-                <BusResultCard
-                  key={`${bus.id}-${bus.busNumber}`}
-                  bus={bus}
-                  isSelecting={selectingBusId === bus.id}
-                  onSelect={() => handleSelectBus(bus)}
-                />
-              ))
-            )}
-          </section>
         )}
 
         {isLoggedIn && profile && (
@@ -256,8 +182,8 @@ export const HomeScreen: React.FC = () => {
               onOpenChange={setComplaintOpen}
               passengerId={profile.id}
               passengerName={profile.name}
-              routeId={fromStop?.routeId ?? selectedRoute?.id}
-              routeName={fromStop?.routeName ?? selectedRoute?.name}
+              routeId={fromStop?.routeId}
+              routeName={fromStop?.routeName}
               stopId={fromStopId}
               stopName={fromStop?.name}
             />

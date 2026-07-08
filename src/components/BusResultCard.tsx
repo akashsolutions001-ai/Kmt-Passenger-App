@@ -1,9 +1,12 @@
 import { AvailableBus } from '@/utils/busSearch';
-import { Bus, ChevronRight, User } from 'lucide-react';
+import { Bus, ChevronRight, User, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface BusResultCardProps {
   bus: AvailableBus;
+  fromStopName?: string;
+  toStopName?: string;
+  routeName?: string;
   isSelecting?: boolean;
   onSelect: () => void;
 }
@@ -24,6 +27,9 @@ const statusClass: Record<AvailableBus['status'], string> = {
 
 export const BusResultCard: React.FC<BusResultCardProps> = ({
   bus,
+  fromStopName,
+  toStopName,
+  routeName,
   isSelecting,
   onSelect,
 }) => {
@@ -33,11 +39,26 @@ export const BusResultCard: React.FC<BusResultCardProps> = ({
       onClick={onSelect}
       disabled={isSelecting}
       className={cn(
-        'w-full text-left p-4 rounded-xl border bg-card border-border transition-all duration-200',
+        'w-full text-left rounded-xl border bg-card border-border transition-all duration-200 overflow-hidden',
         'hover:shadow-card hover:border-primary/50 disabled:opacity-60'
       )}
     >
-      <div className="flex items-center justify-between gap-3">
+      {fromStopName && toStopName && (
+        <div className="px-4 py-2.5 bg-muted/40 border-b border-border flex items-center gap-2 text-xs text-muted-foreground">
+          <MapPin className="w-3.5 h-3.5 shrink-0 text-primary" />
+          <span className="truncate font-medium text-foreground">{fromStopName}</span>
+          <span>→</span>
+          <span className="truncate font-medium text-foreground">{toStopName}</span>
+          {routeName && (
+            <span className="ml-auto text-[10px] uppercase tracking-wide shrink-0 hidden sm:inline">
+              {routeName}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="p-4">
+        <div className="flex items-center justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
             <Bus className="w-5 h-5 text-primary" />
@@ -63,6 +84,7 @@ export const BusResultCard: React.FC<BusResultCardProps> = ({
         </div>
 
         <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
+        </div>
       </div>
     </button>
   );

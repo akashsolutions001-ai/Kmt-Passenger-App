@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Student, Route, BusState, AppNotification, StopStatus, BookableStop } from '@/types/student';
 import { Passenger as FirestorePassenger, Route as FirestoreRoute, LiveBus, AdminStop, Bus } from '@/types/firestore';
+import { AvailableBus } from '@/utils/busSearch';
 import type { RealtimeBusLocation, RealtimeCurrentStop, RealtimeStopEntry } from '@/types/realtime';
 import {
   getRoutes,
@@ -45,6 +46,8 @@ interface AuthContextType {
   isLoggedIn: boolean;
   isGuest: boolean;
   trackingReady: boolean;
+  busResultsReady: boolean;
+  availableBuses: AvailableBus[];
   routes: Route[];
   bookableStops: BookableStop[];
   selectedRoute: Route | null;
@@ -71,6 +74,8 @@ interface AuthContextType {
   /** @deprecated Use selectFromStop */
   selectStop: (stopId: string) => void;
   confirmSelection: () => void;
+  showBusResults: (buses: AvailableBus[]) => void;
+  closeBusResults: () => void;
   backToSearch: () => void;
   markNotificationRead: (id: string) => void;
   clearNotifications: () => void;
@@ -97,6 +102,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
   const [trackingReady, setTrackingReady] = useState(false);
+  const [busResultsReady, setBusResultsReady] = useState(false);
+  const [availableBuses, setAvailableBuses] = useState<AvailableBus[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [adminStops, setAdminStops] = useState<AdminStop[]>([]);
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
@@ -894,6 +901,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoggedIn(false);
     setIsGuest(false);
     setTrackingReady(false);
+    setBusResultsReady(false);
+    setAvailableBuses([]);
     setFromStopId(undefined);
     setToStopId(undefined);
     setSelectedBus(null);
@@ -924,9 +933,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const isNewRoute = selectedRoute?.id !== routeId;
       setSelectedRoute(route);
       setTrackingReady(false);
-      setSelectedBus(null);
-      assignedBusNumberRef.current = null;
-      setAssignedBusNumber(null);
+      setBusResultsReady(false);
+      setAvailableBuses([]);
       if (isNewRoute) {
         setFromStopId(undefined);
         setToStopId(undefined);
@@ -964,6 +972,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setFromStopId(stopId);
+    setBusResultsReady(false);
+    setAvailableBuses([]);
     setSelectedBus(null);
     assignedBusNumberRef.current = null;
     setAssignedBusNumber(null);
@@ -1002,6 +1012,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setToStopId(stopId);
+    setBusResultsReady(false);
+    setAvailableBuses([]);
     setSelectedBus(null);
     assignedBusNumberRef.current = null;
     setAssignedBusNumber(null);
@@ -1095,6 +1107,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [student, selectedRoute, isGuest, fromStopId, toStopId]);
 
+  const showBusResults = useCallback((buses: AvailableBus[]) => {
+    setAvailableBuses(buses);
+    setBusResultsReady(true);
+    setTrackingReady(false);
+  }, []);
+
+  const closeBusResults = useCallback(() => {
+    setBusResultsReady(false);
+    setAvailableBuses([]);
+  }, []);
+
   const backToSearch = useCallback(() => {
     setTrackingReady(false);
     setSelectedBus(null);
@@ -1111,7 +1134,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       currentStopIndex: -1,
       lastUpdated: new Date(),
     });
-  }, []);
+    // Return to bus list if search was done, otherwise home
+    if (availableBuses.length > 0) {
+      setBusResultsReady(true);
+    }
+  }, [availableBuses.length]);
 
   const markNotificationRead = useCallback((id: string) => {
     setNotifications((prev) =>
@@ -1139,6 +1166,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoggedIn,
         isGuest,
         trackingReady,
+        busResultsReady,
+        availableBuses,
         routes,
         bookableStops,
         selectedRoute,
@@ -1163,6 +1192,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         selectToStop,
         selectStop,
         confirmSelection,
+        showBusResults,
+        closeBusResults,
         backToSearch,
         markNotificationRead,
         clearNotifications,

@@ -1,10 +1,11 @@
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { LoginScreen } from '@/screens/LoginScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
+import { BusResultsScreen } from '@/screens/BusResultsScreen';
 import { TrackingScreen } from '@/screens/TrackingScreen';
 
 const AppContent: React.FC = () => {
-  const { isLoggedIn, isGuest, selectedRoute, trackingReady } = useAuth();
+  const { isLoggedIn, isGuest, selectedRoute, trackingReady, busResultsReady } = useAuth();
 
   const canTrack = (isLoggedIn || isGuest) && selectedRoute && trackingReady;
 
@@ -12,11 +13,15 @@ const AppContent: React.FC = () => {
     return <LoginScreen />;
   }
 
-  if (!canTrack) {
-    return <HomeScreen />;
+  if (canTrack) {
+    return <TrackingScreen />;
   }
 
-  return <TrackingScreen />;
+  if (busResultsReady) {
+    return <BusResultsScreen />;
+  }
+
+  return <HomeScreen />;
 };
 
 const Index = () => {
