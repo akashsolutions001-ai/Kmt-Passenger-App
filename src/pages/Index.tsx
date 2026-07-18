@@ -27,9 +27,7 @@ const AppContent: React.FC = () => {
 const Index = () => {
   return (
     <AuthProvider>
-      <div className="min-h-screen-safe bg-background">
-        <AppContent />
-      </div>
+      <AppContent />
     </AuthProvider>
   );
 };

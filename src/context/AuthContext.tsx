@@ -505,13 +505,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    const routeName = selectedRoute?.name ?? student?.routeName ?? null;
+    if (!routeName) {
+      // Route id known but route object not loaded yet — wait for next run
+      previousRouteIdRef.current = null;
+      return;
+    }
+
     previousRouteIdRef.current = routeId;
-    console.log('[Firestore] Finding active bus for route:', selectedRoute.name);
+    console.log('[Firestore] Finding active bus for route:', routeName);
 
     // Subscribe to live bus updates by route NAME (matching how driver reports it)
-    const unsubscribe = subscribeToLiveBus(selectedRoute.name, (liveBus) => {
+    const unsubscribe = subscribeToLiveBus(routeName, (liveBus) => {
       if (!liveBus) {
-        console.warn('[Firestore] No live bus found for route:', selectedRoute.name);
+        console.warn('[Firestore] No live bus found for route:', routeName);
         if (assignedBusNumberRef.current !== null) {
           assignedBusNumberRef.current = null;
           setAssignedBusNumber(null);
@@ -525,7 +532,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const busNumber = liveBus.busNumber;
-      console.log('[Firestore] Live bus detected:', busNumber, 'for route:', selectedRoute.name);
+      console.log('[Firestore] Live bus detected:', busNumber, 'for route:', routeName);
 
       // Only update state if bus number has actually changed
       if (assignedBusNumberRef.current !== busNumber) {
@@ -535,7 +542,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => unsubscribe();
-  }, [selectedBus, student?.selectedRouteId, student?.routeId, selectedRoute?.name, trackingRefreshNonce]);
+  }, [selectedBus, student?.selectedRouteId, student?.routeId, student?.routeName, selectedRoute?.name, trackingRefreshNonce]);
 
   // Step 2: Subscribe to RTDB using bus number (NEW: Direct subscription by busNumber)
   // IMPORTANT: Notification logic lives HERE because the driver app writes to RTDB, not Firestore.

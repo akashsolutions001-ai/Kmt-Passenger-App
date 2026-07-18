@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { StopStatus } from '@/types/student';
 import { estimateArrivalAtStop } from '@/utils/geo';
 import { resolveStopCoordinates } from '@/utils/mapCoordinates';
-import { LogOut, MapPin, Bus, User, BadgeCheck, ArrowLeft, Search } from 'lucide-react';
+import { MapPin, Bus, User, BadgeCheck, ArrowLeft, Search } from 'lucide-react';
 
 export const TrackingScreen: React.FC = () => {
   const {
@@ -25,7 +25,6 @@ export const TrackingScreen: React.FC = () => {
     busState,
     refreshTracking,
     backToSearch,
-    logout,
   } = useAuth();
 
   if (!selectedRoute) return null;
@@ -273,13 +272,6 @@ export const TrackingScreen: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <NotificationBell />
-            <button
-              onClick={logout}
-              className="p-2 rounded-full hover:bg-secondary transition-colors"
-              aria-label="Logout"
-            >
-              <LogOut className="w-5 h-5 text-muted-foreground" />
-            </button>
           </div>
         </div>
 

@@ -26,10 +26,10 @@ export const DepotDirectionsSheet: React.FC<DepotDirectionsSheetProps> = ({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="h-[92vh] rounded-t-2xl px-4 pb-6 overflow-y-auto">
         <SheetHeader className="text-left pb-2">
-          <SheetTitle>Directions to depot</SheetTitle>
+          <SheetTitle>Directions to boarding stop</SheetTitle>
           <SheetDescription>
-            Walk to <strong>{depotName}</strong>. The blue line follows roads. You will be notified
-            when you arrive within 50 metres.
+            Walk to <strong>{depotName}</strong>. Live tracking follows you on the map. You will see
+            &quot;Arrived&quot; within 50 metres.
           </SheetDescription>
         </SheetHeader>
 
