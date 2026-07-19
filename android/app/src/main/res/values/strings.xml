@@ -1,7 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Student Bus Tracker</string>
-    <string name="title_activity_main">Student Bus Tracker</string>
-    <string name="package_name">com.bustrack.student</string>
-    <string name="custom_url_scheme">com.bustrack.student</string>
+    <string name="app_name">KMT Bus Tracker</string>
+    <string name="title_activity_main">KMT Bus Tracker</string>
+    <string name="package_name">com.kmt.passenger</string>
+    <string name="custom_url_scheme">com.kmt.passenger</string>
+    <!-- Web OAuth client ID from Firebase (client_type: 3) — required for Google Sign-In ID tokens -->
+    <string name="default_web_client_id" translatable="false">1093592499284-l355tskc5casotj8rs2dii5fks4750ei.apps.googleusercontent.com</string>
 </resources>

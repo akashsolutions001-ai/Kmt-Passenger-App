@@ -1,14 +1,10 @@
-// Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
+import { getAnalytics, type Analytics } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
 import { getDatabase } from "firebase/database";
 import { getAuth } from "firebase/auth";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+import { Capacitor } from "@capacitor/core";
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBncLpnXmd5KIvE8Sq4iKi1ug4bl4hxhqk",
   authDomain: "kmt-tracker-62159.firebaseapp.com",
@@ -17,20 +13,23 @@ const firebaseConfig = {
   storageBucket: "kmt-tracker-62159.firebasestorage.app",
   messagingSenderId: "1093592499284",
   appId: "1:1093592499284:web:f105d5d3a425aeef9859c1",
-  measurementId: "G-4ELB2NRC27"
+  measurementId: "G-4ELB2NRC27",
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
 
-// Initialize Firestore
+let analytics: Analytics | null = null;
+if (!Capacitor.isNativePlatform() && typeof window !== "undefined") {
+  try {
+    analytics = getAnalytics(app);
+  } catch {
+    // Analytics unavailable (e.g. unsupported browser)
+  }
+}
+
 export const db = getFirestore(app);
-
-// Initialize Realtime Database
 export const rtdb = getDatabase(app);
-
-// Initialize Auth
 export const auth = getAuth(app);
+export { analytics };
 
 export default app;

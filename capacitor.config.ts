@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.bustrack.student',
-  appName: 'Student Bus Tracker',
+  appId: 'com.kmt.passenger',
+  appName: 'KMT Bus Tracker',
   webDir: 'dist',
   server: {
     androidScheme: 'https',
@@ -21,6 +21,10 @@ const config: CapacitorConfig = {
     StatusBar: {
       style: "DARK",
       backgroundColor: "#1e293b"
+    },
+    FirebaseAuthentication: {
+      skipNativeAuth: true,
+      providers: ["google.com"]
     }
   }
 };

@@ -848,6 +848,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithGoogle = useCallback(async (): Promise<boolean> => {
     try {
       const user = await signInWithGoogle();
+
       if (!user.email) {
         toast.error('Google sign-in failed', { description: 'No email found on your Google account.' });
         return false;
@@ -871,13 +872,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return true;
     } catch (error: unknown) {
       const err = error as { code?: string; message?: string };
-      if (err.code === 'auth/popup-closed-by-user') return false;
+      if (
+        err.code === 'auth/popup-closed-by-user' ||
+        err.code === 'auth/cancelled-popup-request' ||
+        err.message?.toLowerCase().includes('cancel')
+      ) {
+        return false;
+      }
       console.error('Google login error:', error);
       toast.error('Google sign-in failed', {
         description:
           err.code === 'auth/operation-not-allowed'
             ? 'Enable Google sign-in in Firebase Console → Authentication → Sign-in method.'
-            : err.message ?? 'Please try again.',
+            : err.code === 'auth/missing-id-token'
+              ? 'Google Sign-In did not return a token. Add your app SHA-1 in Firebase and redownload google-services.json.'
+              : err.message ?? 'Please try again.',
       });
       return false;
     }

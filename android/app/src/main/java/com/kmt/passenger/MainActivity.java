@@ -1,4 +1,4 @@
-package com.bustrack.student;
+package com.kmt.passenger;
 
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -13,6 +13,19 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         createNotificationChannel();
+    }
+
+    /**
+     * Guard against Capacitor Bridge being null when Android tries to save
+     * instance state (e.g. when Chrome Custom Tab opens for Google sign-in).
+     * Without this, a NullPointerException crashes the app every time the
+     * sign-in screen is shown.
+     */
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        if (getBridge() != null) {
+            super.onSaveInstanceState(outState);
+        }
     }
 
     private void createNotificationChannel() {
